@@ -815,6 +815,10 @@ func TestConfig_setupAgentsWithNoDisabledTools(t *testing.T) {
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
 	assert.Equal(t, []string{"lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "grep", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools)
+
+	planAgent, ok := cfg.Agents[AgentPlan]
+	require.True(t, ok)
+	assert.Equal(t, []string{"agent", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "grep", "ls", "question", "sourcegraph", "view"}, planAgent.AllowedTools)
 }
 
 func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
@@ -837,12 +841,17 @@ func TestConfig_setupAgentsWithDisabledTools(t *testing.T) {
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
 	assert.Equal(t, []string{"lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "ls", "sourcegraph", "view"}, taskAgent.AllowedTools)
+
+	planAgent, ok := cfg.Agents[AgentPlan]
+	require.True(t, ok)
+	assert.Equal(t, []string{"agent", "lsp_symbols", "lsp_definition", "lsp_call_hierarchy", "glob", "ls", "question", "sourcegraph", "view"}, planAgent.AllowedTools)
 }
 
 func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg := &Config{
 		Options: &Options{
 			DisabledTools: []string{
+				"agent",
 				"glob",
 				"grep",
 				"ls",
@@ -858,11 +867,15 @@ func TestConfig_setupAgentsWithEveryReadOnlyToolDisabled(t *testing.T) {
 	cfg.SetupAgents()
 	coderAgent, ok := cfg.Agents[AgentCoder]
 	require.True(t, ok)
-	assert.Equal(t, []string{"agent", "bash", "crush_info", "crush_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools)
+	assert.Equal(t, []string{"bash", "crush_info", "crush_logs", "job_output", "job_kill", "download", "edit", "multiedit", "lsp_diagnostics", "lsp_references", "lsp_restart", "lsp_rename", "lsp_replace_symbol", "fetch", "agentic_fetch", "question", "todos", "write", "list_mcp_resources", "read_mcp_resource"}, coderAgent.AllowedTools)
 
 	taskAgent, ok := cfg.Agents[AgentTask]
 	require.True(t, ok)
 	assert.Len(t, taskAgent.AllowedTools, 0)
+
+	planAgent, ok := cfg.Agents[AgentPlan]
+	require.True(t, ok)
+	assert.Equal(t, []string{"question"}, planAgent.AllowedTools)
 }
 
 func TestConfig_configureProvidersWithDisabledProvider(t *testing.T) {
@@ -2533,4 +2546,176 @@ func TestConfig_LoadFromBytes_EnvMerge(t *testing.T) {
 	require.NotNil(t, loadedConfig.Env)
 	require.Equal(t, "second", loadedConfig.Env["AWS_PROFILE"])
 	require.Equal(t, "us-east-1", loadedConfig.Env["AWS_REGION"])
+}
+
+func TestIsSSH(t *testing.T) {
+	tests := []struct {
+		name string
+		env  map[string]string
+		want bool
+	}{
+		{
+			name: "SSH_TTY set",
+			env:  map[string]string{"SSH_TTY": "/dev/pts/0"},
+			want: true,
+		},
+		{
+			name: "SSH_CONNECTION set",
+			env:  map[string]string{"SSH_CONNECTION": "10.0.0.1 12345 10.0.0.2 22"},
+			want: true,
+		},
+		{
+			name: "SSH_CLIENT set",
+			env:  map[string]string{"SSH_CLIENT": "10.0.0.1 12345 22"},
+			want: true,
+		},
+		{
+			name: "no SSH env",
+			env:  map[string]string{},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+			// Ensure other SSH variables are unset.
+			for _, k := range []string{"SSH_TTY", "SSH_CONNECTION", "SSH_CLIENT"} {
+				if _, ok := tt.env[k]; !ok {
+					t.Setenv(k, "")
+				}
+			}
+			assert.Equal(t, tt.want, isSSH())
+		})
+	}
+}
+
+// TestShouldReduceAnimations tests the ShouldReduceAnimations logic.
+func TestShouldReduceAnimations(t *testing.T) {
+	// Test explicit reduce_animations: true
+	cfg := &Config{
+		Options: &Options{
+			TUI: &TUIOptions{
+				ReduceAnimations: ptr(true),
+			},
+		},
+	}
+	assert.True(t, cfg.ShouldReduceAnimations())
+
+	// Test explicit reduce_animations: false
+	cfg.Options.TUI.ReduceAnimations = ptr(false)
+	assert.False(t, cfg.ShouldReduceAnimations())
+
+	// Test SSH with reduce mode
+	cfg.Options.TUI.ReduceAnimations = nil
+	cfg.Options.TUI.SSHAnimationMode = "reduce"
+	os.Setenv("SSH_TTY", "some_value")
+	assert.True(t, cfg.ShouldReduceAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test SSH with never mode (should not reduce)
+	cfg.Options.TUI.SSHAnimationMode = "never"
+	os.Setenv("SSH_TTY", "some_value")
+	assert.False(t, cfg.ShouldReduceAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test SSH with ask mode (should not reduce unless explicitly set)
+	cfg.Options.TUI.SSHAnimationMode = "ask"
+	os.Setenv("SSH_TTY", "some_value")
+	assert.False(t, cfg.ShouldReduceAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test no SSH, no explicit setting
+	cfg.Options.TUI.SSHAnimationMode = ""
+	assert.False(t, cfg.ShouldReduceAnimations())
+}
+
+// TestShouldPromptForSSHAnimations tests when we should prompt for SSH animations.
+func TestShouldPromptForSSHAnimations(t *testing.T) {
+	// Test SSH + ask mode + no explicit setting = prompt
+	cfg := &Config{
+		Options: &Options{
+			TUI: &TUIOptions{
+				SSHAnimationMode: "ask",
+			},
+		},
+	}
+	os.Setenv("SSH_TTY", "some_value")
+	assert.True(t, cfg.ShouldPromptForSSHAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test default (empty) ssh_animation_mode = prompt (same as "ask")
+	cfg.Options.TUI.SSHAnimationMode = ""
+	os.Setenv("SSH_TTY", "some_value")
+	assert.True(t, cfg.ShouldPromptForSSHAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test SSH + ask mode + explicit setting = no prompt
+	cfg.Options.TUI.ReduceAnimations = ptr(true)
+	assert.False(t, cfg.ShouldPromptForSSHAnimations())
+
+	// Test SSH + reduce mode = no prompt (auto-enabled)
+	cfg.Options.TUI.ReduceAnimations = nil
+	cfg.Options.TUI.SSHAnimationMode = "reduce"
+	os.Setenv("SSH_TTY", "some_value")
+	assert.False(t, cfg.ShouldPromptForSSHAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test SSH + never mode = no prompt (never enable)
+	cfg.Options.TUI.SSHAnimationMode = "never"
+	os.Setenv("SSH_TTY", "some_value")
+	assert.False(t, cfg.ShouldPromptForSSHAnimations())
+	os.Unsetenv("SSH_TTY")
+
+	// Test non-SSH = no prompt
+	os.Unsetenv("SSH_TTY")
+	assert.False(t, cfg.ShouldPromptForSSHAnimations())
+}
+
+// TestSetSSHAnimationMode tests persisting SSH animation mode.
+func TestSetSSHAnimationMode(t *testing.T) {
+	cfg := &Config{
+		Options: &Options{
+			TUI: &TUIOptions{},
+		},
+	}
+
+	// Test setting to reduce
+	assert.NoError(t, cfg.SetSSHAnimationMode("reduce"))
+	assert.Equal(t, "reduce", cfg.Options.TUI.SSHAnimationMode)
+
+	// Test setting to never
+	assert.NoError(t, cfg.SetSSHAnimationMode("never"))
+	assert.Equal(t, "never", cfg.Options.TUI.SSHAnimationMode)
+
+	// Test setting to ask (empty string)
+	assert.NoError(t, cfg.SetSSHAnimationMode(""))
+	assert.Equal(t, "", cfg.Options.TUI.SSHAnimationMode)
+}
+
+// TestConfig_load applies environment variable and SSH detection.
+func TestConfig_load(t *testing.T) {
+	// Test CRUSH_REDUCE_ANIMATIONS env var
+	t.Setenv("CRUSH_REDUCE_ANIMATIONS", "true")
+
+	cfg, err := Load("", "", false)
+	require.NoError(t, err)
+	assert.NotNil(t, cfg)
+	assert.NotNil(t, cfg.config.Options)
+	assert.NotNil(t, cfg.config.Options.TUI)
+	assert.True(t, *cfg.config.Options.TUI.ReduceAnimations)
+
+	// Test SSH auto-enable is removed (should not auto-enable)
+	// When SSH_TTY is set but CRUSH_REDUCE_ANIMATIONS is NOT set,
+	// ReduceAnimations should remain nil.
+	os.Unsetenv("CRUSH_REDUCE_ANIMATIONS")
+	t.Setenv("SSH_TTY", "some_value")
+	cfg2, err := Load("", "", false)
+	require.NoError(t, err)
+	assert.NotNil(t, cfg2)
+	assert.NotNil(t, cfg2.config.Options)
+	assert.NotNil(t, cfg2.config.Options.TUI)
+	assert.Nil(t, cfg2.config.Options.TUI.ReduceAnimations) // Should be nil, not auto-set to true
 }

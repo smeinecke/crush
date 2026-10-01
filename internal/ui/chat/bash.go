@@ -32,8 +32,10 @@ func NewBashToolMessageItem(
 	result *message.ToolResult,
 	canceled bool,
 	workingDir string,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &BashToolRenderContext{workingDir: workingDir}, canceled)
+	base := newBaseToolMessageItem(sty, toolCall, result, &BashToolRenderContext{workingDir: workingDir}, canceled, reduceAnimations)
+	return &BashToolMessageItem{baseToolMessageItem: base}
 }
 
 // BashToolRenderContext renders bash tool messages.
@@ -65,11 +67,9 @@ func (b *BashToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		return renderJobTool(sty, opts, cappedWidth, "Start", meta.ShellID, description, content)
 	}
 
-	// Regular bash command.
+	// Regular bash command. The command is always rendered expanded
+	// (newlines preserved); expansion only controls the output body.
 	cmd := params.Command
-	if !opts.ExpandedContent {
-		cmd = strings.ReplaceAll(cmd, "\n", " ")
-	}
 	cmd = strings.ReplaceAll(cmd, "\t", "    ")
 	cmd = common.StripBashDisplayPrefix(cmd, b.workingDir)
 	if highlighted, err := common.SyntaxHighlightLexerName(sty, cmd, "bash", nil); err == nil {
@@ -80,7 +80,11 @@ func (b *BashToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 		toolParams = append(toolParams, "background", "true")
 	}
 
-	header := toolHeader(sty, opts.Status, "Bash", cappedWidth, opts, toolParams...)
+	// The command is always rendered expanded (wrapped, never
+	// truncated); expansion only controls the output body.
+	headerOpts := *opts
+	headerOpts.ExpandedContent = true
+	header := toolHeader(sty, opts.Status, "Bash", cappedWidth, &headerOpts, toolParams...)
 	if opts.Compact {
 		return header
 	}
@@ -123,8 +127,9 @@ func NewJobOutputToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &JobOutputToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &JobOutputToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // JobOutputToolRenderContext renders job_output tool messages.
@@ -174,8 +179,9 @@ func NewJobKillToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &JobKillToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &JobKillToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // JobKillToolRenderContext renders job_kill tool messages.

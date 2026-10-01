@@ -346,6 +346,57 @@ Values support the same `$VAR` and `$(command)` expansion as other config
 fields, so you can reference existing environment variables or shell out for
 a value.
 
+### Themes
+
+Crush ships with built-in color themes.
+
+#### Switching Themes
+
+Open the command palette with `ctrl+p`, select **Themes**, and browse the
+list. The UI previews each theme as you navigate, and pressing `enter`
+confirms the selection. Press `esc` to cancel and revert.
+
+#### Editing Themes
+
+Open **Themes**, highlight the theme to customize, and press `ctrl+e`.
+Changes preview live as you type. Press `enter` or `ctrl+s` to save, or `esc`
+to cancel and revert. User themes are stored globally in the Crush config
+directory under `themes/`.
+
+You can also select a theme directly in your config with `active_theme`:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "tui": {
+      "active_theme": "gruvbox-dark"
+    }
+  }
+}
+```
+
+Custom theme palettes are stored as JSON files in the global theme directory.
+For example, `~/.config/crush/themes/my-theme.json`:
+
+```json
+{
+  "base": "gruvbox-dark",
+  "primary": "#ff6b6b",
+  "bg_base": "#1a1a2e"
+}
+```
+
+Select it by setting `active_theme` to `my-theme` or from the **Themes**
+dialog.
+
+#### Built-In Themes
+
+| Theme | Name |
+| --- | --- |
+| Charmtone Pantera | `charmtone-panther` (default) |
+| Gruvbox Dark | `gruvbox-dark` |
+
 ### LSPs
 
 Crush can use LSPs for additional context to help inform its decisions, just
@@ -681,6 +732,41 @@ option attribution-generated-with true
   - `none`: No attribution trailer
 - `generated_with`: When true (default), adds `💘 Generated with Crush` line to
   commit messages and PR descriptions
+
+### TUI Options
+
+Crush provides several options to customize the terminal UI:
+
+```json
+{
+  "$schema": "https://charm.land/crush.json",
+  "options": {
+    "tui": {
+      "compact_mode": true,
+      "diff_mode": "split",
+      "transparent": true,
+      "reduce_animations": true,
+      "ssh_animation_mode": "reduce"
+    }
+  }
+}
+```
+
+- `compact_mode`: Enable compact TUI layout (default: `false`)
+- `diff_mode`: Diff view style - `"unified"` or `"split"` (default: `"unified"`)
+- `transparent`: Enable transparent background (default: `false`)
+- `reduce_animations`: When true, animated spinners are replaced with a simpler
+  "Working..." ellipsis animation. Can also be enabled via the
+  `CRUSH_REDUCE_ANIMATIONS` environment variable.
+- `ssh_animation_mode`: Controls animation behavior over SSH connections:
+  - `"ask"`: Prompt the user on first SSH session (default)
+  - `"reduce"`: Automatically reduce animations over SSH
+  - `"never"`: Keep animations enabled over SSH
+
+When Crush detects it is running over SSH and `ssh_animation_mode` is `"ask"`
+(the default), it will display a dialog asking whether to switch to simpler
+animations. The choice you make in that dialog is saved to the global `crush.json`
+under `options.tui.ssh_animation_mode` and applies to future SSH sessions.
 
 ### Custom Providers
 

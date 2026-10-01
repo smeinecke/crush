@@ -30,8 +30,9 @@ func NewTodosToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &TodosToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &TodosToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // TodosToolRenderContext renders todos tool messages.
@@ -70,7 +71,7 @@ func (t *TodosToolRenderContext) RenderTool(sty *styles.Styles, width int, opts 
 		ratio := sty.Tool.TodoRatio.Render(fmt.Sprintf("%d/%d", completedCount, len(params.Todos)))
 		headerText = ratio
 		if inProgressTask != "" {
-			headerText = fmt.Sprintf("%s · %s", ratio, inProgressTask)
+			headerText = ratio + sty.Tool.TodoStatusNote.Render(" · "+inProgressTask)
 		}
 
 		// If we have metadata, use it for richer display.

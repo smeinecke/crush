@@ -100,6 +100,12 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		assignIfNil(&cfg.Options.TUI.Transparent, true)
 	}
 
+	if str, ok := os.LookupEnv("CRUSH_REDUCE_ANIMATIONS"); ok {
+		if val, err := strconv.ParseBool(str); err == nil {
+			assignIfNil(&cfg.Options.TUI.ReduceAnimations, val)
+		}
+	}
+
 	// Load known providers, this loads the config from catwalk. A failed
 	// refresh still yields the cached or embedded catalog, so only an empty
 	// list is fatal: starting up without providers is worse than starting
@@ -115,6 +121,21 @@ func Load(workingDir, dataDir string, debug bool) (*ConfigStore, error) {
 		slog.Warn("Continuing with the previously known providers", "error", err)
 	}
 	store.knownProviders = providers
+
+	// When Catwalk refreshed its catalog this run, give the ChatGPT model
+	// catalog the same treatment: it is otherwise only fetched at login
+	// and would freeze there while Catwalk keeps moving. Best effort; a
+	// failed fetch keeps the catalog loaded from config.
+	//
+	// refetchOpenAIModels publishes a copy-on-write config, so re-read it
+	// afterwards: the mutations below must land on the live config rather
+	// than a snapshot the store has already replaced.
+	if CatwalkUpdated() {
+		fetchCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		store.refetchOpenAIModels(fetchCtx, ScopeGlobal)
+		cancel()
+		cfg = store.Config()
+	}
 
 	env := env.New()
 	// Configure providers
@@ -366,6 +387,12 @@ func (c *Config) configureProviders(ctx context.Context, store *ConfigStore, env
 				}
 			}
 		default:
+			// An OAuth login is a credential too: providers signed in
+			// through OAuth (e.g. OpenAI with a ChatGPT account) are
+			// configured even when no API key is present.
+			if config.OAuthToken != nil {
+				break
+			}
 			// if the provider api or endpoint are missing we skip them
 			v, err := resolver.ResolveValue(p.APIKey)
 			if v == "" || err != nil {
@@ -1445,4 +1472,38 @@ func (c *Config) ValidateHooks() error {
 		}
 	}
 	return nil
+}
+
+func isSSH() bool {
+	return os.Getenv("SSH_TTY") != "" ||
+		os.Getenv("SSH_CONNECTION") != "" ||
+		os.Getenv("SSH_CLIENT") != ""
+}
+
+// ShouldReduceAnimations returns whether animations should be reduced based on config.
+func (c *Config) ShouldReduceAnimations() bool {
+	if c.Options == nil || c.Options.TUI == nil {
+		return false
+	}
+	// Explicit reduce_animations setting takes precedence.
+	if c.Options.TUI.ReduceAnimations != nil && *c.Options.TUI.ReduceAnimations {
+		return true
+	}
+	// Auto-reduce when SSH and ssh_animation_mode is "reduce".
+	if isSSH() && c.Options.TUI.SSHAnimationMode == "reduce" {
+		return true
+	}
+	return false
+}
+
+// ShouldPromptForSSHAnimations returns whether we should prompt the user about
+// reducing animations over SSH. This is true when:
+// - Running over SSH
+// - ssh_animation_mode is "ask" (default)
+// - reduce_animations is not explicitly set
+func (c *Config) ShouldPromptForSSHAnimations() bool {
+	if c.Options == nil || c.Options.TUI == nil {
+		return false
+	}
+	return isSSH() && (c.Options.TUI.SSHAnimationMode == "" || c.Options.TUI.SSHAnimationMode == "ask") && c.Options.TUI.ReduceAnimations == nil
 }

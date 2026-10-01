@@ -28,8 +28,9 @@ func NewViewToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &ViewToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &ViewToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // ViewToolRenderContext renders view tool messages.
@@ -114,8 +115,9 @@ func NewWriteToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &WriteToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &WriteToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // WriteToolRenderContext renders write tool messages.
@@ -183,8 +185,9 @@ func NewEditToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &EditToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &EditToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // EditToolRenderContext renders edit tool messages.
@@ -225,9 +228,16 @@ func (e *EditToolRenderContext) RenderTool(sty *styles.Styles, width int, opts *
 
 	diff := toolOutputDiffContent(sty, file, meta.OldContent, meta.NewContent, width, opts.ExpandedContent)
 
-	// On error (e.g. denied permission), show error above the diff.
+	// On error (e.g. denied permission), show the error above the diff. An
+	// edit can also fail before there is any diff to show — refusing to touch
+	// a file that was never read, for one — and then the metadata carries no
+	// content. Rendering a diff of nothing still emits its padding, which
+	// reads as a stray blank line hanging under the error.
 	if opts.Result.IsError {
 		errLine := toolErrorContent(sty, opts.Result, width)
+		if meta.OldContent == "" && meta.NewContent == "" {
+			return joinToolParts(header, errLine)
+		}
 		return strings.Join([]string{header, "", errLine, "", diff}, "\n")
 	}
 
@@ -251,8 +261,9 @@ func NewMultiEditToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &MultiEditToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &MultiEditToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // MultiEditToolRenderContext renders multi-edit tool messages.
@@ -299,9 +310,16 @@ func (m *MultiEditToolRenderContext) RenderTool(sty *styles.Styles, width int, o
 	// Render diff with optional failed edits note.
 	diff := toolOutputMultiEditDiffContent(sty, file, meta, len(params.Edits), width, opts.ExpandedContent)
 
-	// On error (e.g. denied permission), show error above the diff.
+	// On error (e.g. denied permission), show the error above the diff. An
+	// edit can also fail before there is any diff to show — refusing to touch
+	// a file that was never read, for one — and then the metadata carries no
+	// content. Rendering a diff of nothing still emits its padding, which
+	// reads as a stray blank line hanging under the error.
 	if opts.Result.IsError {
 		errLine := toolErrorContent(sty, opts.Result, width)
+		if meta.OldContent == "" && meta.NewContent == "" {
+			return joinToolParts(header, errLine)
+		}
 		return strings.Join([]string{header, "", errLine, "", diff}, "\n")
 	}
 
@@ -325,8 +343,9 @@ func NewDownloadToolMessageItem(
 	toolCall message.ToolCall,
 	result *message.ToolResult,
 	canceled bool,
+	reduceAnimations bool,
 ) ToolMessageItem {
-	return newBaseToolMessageItem(sty, toolCall, result, &DownloadToolRenderContext{}, canceled)
+	return newBaseToolMessageItem(sty, toolCall, result, &DownloadToolRenderContext{}, canceled, reduceAnimations)
 }
 
 // DownloadToolRenderContext renders download tool messages.
